@@ -26,7 +26,7 @@ function tr_grabber_meta_box() {
 		'normal',
 		'high'
 	);
-            
+             
     add_meta_box(
         'links_meta_box',
         __('Links', 'tr-grabber'),
@@ -60,7 +60,7 @@ function tr_grabber_featured_meta_box_function( $post ) {
     }
     ?>
 
-    <p class="hide-if-no-js trgrabber-image-container-<?php echo $id; ?>"><a href="#" class="trgrabber-add-media trgrabber-media-edit trgrabber-media-edit-<?php echo $id; ?>" data-title="<?php echo $title; ?>" data-button="<?php echo $label_use; ?>" data-id="<?php echo $id; ?>" data-postid="<?php echo $post->ID; ?>"><?php echo $link_title; ?></a></p>
+    <p class="hide-if-no-js trgrabber-image-container-<?php echo $id; ?>"><a href="#" class="trgrabber-add-media trgrabber-media-edit trgrabber-media-edit-<?php echo $id; ?>" data-title="<?php echo $title; ?>" data-button="<?php echo $label_use; ?>" data-id="<?php echo $id; ?>" data-postid="<?php echo $post->ID; ?>" type="button"><?php echo $link_title; ?></a></p>
 
     <p style="<?php echo $hide_remove_button; ?>"><a href="#" data-title="<?php echo $label_set; ?>" class="trgrabber-media-delete"><?php echo $label_remove; ?></a></p>
 <?php   
@@ -102,9 +102,9 @@ function tr_grabber_type( $id = NULL ) {
     
     $return = 0;
                 
-    if( isset($_REQUEST['post_type']) and $_REQUEST['post_type'] == 'movies' or isset($current_screen->post_type) and $current_screen->post_type == 'movies' or isset( $_GET['post'] ) and get_post_type( $_GET['post'] ) == 'movies' ) {
+    if( isset($_REQUEST['post_type']) and $_REQUEST['post_type'] == 'movies' or isset($current_screen->post_type) and $current_screen->post_type == 'movies' or isset( $_GET['post'] ) and get_post_type( intval($_GET['post']) ) == 'movies' ){
         $return = 1;
-    }elseif( isset($_REQUEST['post_type']) and $_REQUEST['post_type'] == 'series' or isset($current_screen->post_type) and $current_screen->post_type == 'series' or isset( $_GET['post'] ) and get_post_type( $_GET['post'] ) == 'series' ) {
+    }elseif( isset($_REQUEST['post_type']) and $_REQUEST['post_type'] == 'series' or isset($current_screen->post_type) and $current_screen->post_type == 'series' or isset( $_GET['post'] ) and get_post_type( intval($_GET['post']) ) == 'series' ){
         $return = 2;
     }
     
@@ -112,160 +112,136 @@ function tr_grabber_type( $id = NULL ) {
     
 }
 
+/**
+ * Count distinct seasons for a series
+ *
+ * Refactored to use TRG_DB for efficient database queries.
+ *
+ * @param int  $post_id  Series post ID
+ * @param bool $display  Whether to echo the result (default: true)
+ * @param bool $rest     If true, exclude one from the count (legacy compatibility)
+ * @return int|void Count of seasons or void if display=true
+ */
 function tr_grabber_count_seasons( $post_id, $display = true, $rest = false ) {
+    $count = TRG_DB::count_seasons( intval( $post_id ) );
     
-    $term_list = wp_get_post_terms($post_id, 'seasons', array("fields" => "all"));
-    
-    if( !is_wp_error( $term_list ) and isset( $term_list ) ) {
-
-        $total_terms = isset($term_list) ? count($term_list) : 0;
-        
-        if( $rest == true and $total_terms > 0 ) {  $total_terms = $total_terms-1; }
-
-        $return = $total_terms;
-
+    if( $rest && $count > 0 ) {
+        $count--;
     }
-    
-    if( $display == true ) { echo $return; }else{ return $return; }
-    
+
+    if( $display ) {
+        echo intval( $count );
+    } else {
+        return intval( $count );
+    }
 }
 
+/**
+ * Count episodes for a series, optionally filtered by season
+ *
+ * Refactored to use TRG_DB for efficient database queries.
+ *
+ * @param int      $post_id         Series post ID
+ * @param int|null $season_current  Optional season number to filter
+ * @param bool     $display         Whether to echo the result (default: true)
+ * @param bool     $rest            If true, exclude one from the count (legacy compatibility)
+ * @return int|void Count of episodes or void if display=true
+ */
 function tr_grabber_count_episodes( $post_id, $season_current = NULL, $display = true, $rest = false ) {
+    $count = TRG_DB::count_episodes( intval( $post_id ), $season_current !== null ? intval( $season_current ) : null );
     
-    $term_list = wp_get_post_terms($post_id, 'episodes', array("fields" => "all"));
+    if( $rest && $count > 0 ) {
+        $count--;
+    }
+
+    if( $display ) {
+        echo intval( $count );
+    } else {
+        return intval( $count );
+    }
+}
+
+/**
+ * Get all seasons for a series
+ *
+ * Refactored to use TRG_DB. Returns season objects with term_id and name properties
+ * for backward compatibility with theme consumers.
+ *
+ * @param int      $post_id Series post ID
+ * @param int|null $season  Optional: if set, filter to a specific season (legacy behavior)
+ * @return array Array of season objects
+ */
+function tr_grabber_list_seasons( $post_id = NULL, $season = NULL ) {
+    $post_id = intval( $post_id );
     
-    if( !is_wp_error($term_list) and isset($term_list) ) {
-        if( isset( $season_current ) ) {
-            
-            foreach ($term_list as &$count_episode_season) {
-                if( get_term_meta($count_episode_season->term_id, 'season_number', true) == $season_current ) {
-                    
-                    $array_episodes_season[] = $count_episode_season->term_id;
-
-                }
-
+    if( null !== $season ) {
+        // Legacy: specific season lookup
+        $season = intval( $season );
+        $episodes = TRG_DB::get_episodes( $post_id, $season );
+        
+        // Build unique season objects from episodes
+        $seasons = array();
+        $season_numbers = array();
+        
+        foreach ( $episodes as $episode ) {
+            if ( ! in_array( $episode->season_number, $season_numbers, true ) ) {
+                $season_numbers[] = $episode->season_number;
+                
+                // Create lightweight season object
+                $season_obj = new stdClass();
+                $season_obj->term_id = $episode->term_id ?? 0;
+                $season_obj->season_number = $episode->season_number;
+                $season_obj->name = 'Season ' . $episode->season_number; // Fallback name
+                
+                $seasons[] = $season_obj;
             }
-
-            $return = isset( $array_episodes_season ) ? count($array_episodes_season) : 0;
-
-            if( $rest == true and $return > 0 ) {  $return = $return-1; }
-            
-        }else{
-            
-            $return = isset( $term_list ) ? count($term_list) : 0;
-            if( $rest == true and $return > 0 ) {  $return = $return-1; }
-            
-            $return = $return;
-            
-        }
-
-    }
-    
-    if( $display == true ) { echo $return; }else{ return $return; }
-    
-}
-
-function tr_grabber_list_seasons( $post_id =  NULL, $season = NULL ) {
-    
-    if( $season == '' ) {
-    
-        $seasons_list = wp_get_post_terms($post_id, 'seasons', array('orderby' => 'meta_value_num', 'order' => 'ASC', 'fields' => 'all', 'meta_query' => [[
-        'key' => 'season_number',
-        'type' => 'NUMERIC',
-      ]],) );
-        
-    }else{
-        
-        $args = array(
-            array(
-                'relation' => 'AND',
-                'tr_id_post' => array(
-                    'key' => 'tr_id_post',
-                    'compare' => '=',
-                    'value' => $post_id,
-                ),
-                'season_number' => array(
-                    'key' => 'season_number',
-                    'compare' => '=',
-                    'value' => $season,
-                ),
-            ),
-        );
-        
-        $seasons_list = wp_get_post_terms($post_id, 'seasons', array('orderby' => 'meta_value_num', 'order' => 'ASC', 'fields' => 'all', 'meta_query' => $args, ) );
-        
-    }
-    
-    return $seasons_list;
-    
-}
-
-function tr_grabber_list_episodes( $post_id =  NULL, $season = NULL ) {
-    
-    if( $season == '' ) {
-    
-        $episodes_list = wp_get_post_terms($post_id, 'episodes', array('orderby' => 'meta_value_num', 'order' => 'ASC', 'fields' => 'all', 'meta_query' => [[
-        'key' => 'episode_number',
-        'type' => 'NUMERIC',
-        ]],) );
-        
-    }else{
-        
-        if( $season == 'special' ) {
-            
-            $args = array(
-                array(
-                    'relation' => 'AND',
-                    'episode_number' => array(
-                        'key' => 'episode_number',
-                        'type' => 'NUMERIC',
-                    ),
-                    'season_number' => array(
-                        'key' => 'season_special',
-                        'compare' => '=',
-                        'value' => 1,
-                    ),
-                ),
-            );
-            
-        }else{
-            
-            $args = array(
-                array(
-                    'relation' => 'AND',
-                    'episode_number' => array(
-                        'key' => 'episode_number',
-                        'type' => 'NUMERIC',
-                    ),
-                    'season_number' => array(
-                        'key' => 'season_number',
-                        'compare' => '=',
-                        'value' => $season,
-                    ),
-                ),
-                /*
-                array(
-                    'relation' => 'OR',
-                    'episode_number' => array(
-                        'key' => 'episode_number',
-                        'type' => 'NUMERIC',
-                    ),
-                    'season_number' => array(
-                        'key' => 'season_special',
-                        'compare' => '=',
-                        'value' => 1,
-                    ),
-                ),*/
-            );
-            
         }
         
-        $episodes_list = wp_get_post_terms($post_id, 'episodes', array('orderby' => 'meta_value_num', 'order' => 'ASC', 'fields' => 'all', 'meta_query' => $args, ) );
-        
+        return $seasons;
     }
     
-    return $episodes_list;
+    // Get all distinct seasons
+    $db_seasons = TRG_DB::get_seasons( $post_id );
+    $seasons = array();
     
+    foreach ( $db_seasons as $db_season ) {
+        // Fetch first episode of this season to get term_id
+        $episodes = TRG_DB::get_episodes( $post_id, intval( $db_season->season_number ) );
+        
+        $season_obj = new stdClass();
+        $season_obj->term_id = ! empty( $episodes ) ? intval( $episodes[0]->term_id ) : 0;
+        $season_obj->season_number = intval( $db_season->season_number );
+        $season_obj->name = 'Season ' . $db_season->season_number; // Fallback name
+        
+        $seasons[] = $season_obj;
+    }
+    
+    return $seasons;
+}
+
+/**
+ * Get all episodes for a series, optionally filtered by season
+ *
+ * Refactored to use TRG_DB. Returns episode objects with term_id, name, season_number,
+ * episode_number properties for backward compatibility with theme consumers.
+ *
+ * @param int      $post_id Series post ID
+ * @param int|null $season  Optional season number filter; 'special' for special episodes
+ * @return array Array of episode objects
+ */
+function tr_grabber_list_episodes( $post_id = NULL, $season = NULL ) {
+    $post_id = intval( $post_id );
+    
+    if( $season === 'special' ) {
+        // Get special episodes (is_special = 1)
+        return TRG_DB::get_episodes( $post_id, null, true );
+    } elseif( null !== $season && $season !== '' ) {
+        // Get specific season episodes
+        return TRG_DB::get_episodes( $post_id, intval( $season ) );
+    } else {
+        // Get all episodes
+        return TRG_DB::get_episodes( $post_id );
+    }
 }
 
 function trgrabber_base64en($string) {
@@ -311,9 +287,9 @@ function trgrabber_info( $show = NULL, $tag = 'span', $class = '', $display = TR
     
     if( $show == 'runtime' ) {
         $runtime_field = get_post_meta($post->ID, TR_GRABBER_FIELD_RUNTIME, true);
-        if(tr_check_type($post->ID)==2 and is_array($runtime_field) and !empty( $runtime_field )){
+        if(tr_grabber_type($post->ID)==2 and is_array($runtime_field) and !empty( $runtime_field )){
             $runtime_field = implode('m, ', $runtime_field).'m ';
-        }elseif(tr_check_type($post->ID)==2 and !is_array($runtime_field) and !empty( $runtime_field )){
+        }elseif(tr_grabber_type($post->ID)==2 and !is_array($runtime_field) and !empty( $runtime_field )){
             $runtime_field = implode('m, ', explode(',', $runtime_field)).'m';
         }elseif( !empty($runtime_field) ){
             $runtime_field = $runtime_field;
