@@ -4,7 +4,7 @@
     Plugin URI: https://torothemes.com
     Description: Turn your WordPress into a CMS for movies and series, TMDb API included.
     Author: ToroThemes
-    Version: 2.2
+    Version: 3.0
     Author URI: https://torothemes.com/
     License: Private
 */
@@ -21,7 +21,7 @@ function trgrabber_load_textdomain() {
 
 function tr_grabber_install() {
     
-    $lang_availables = array("ar-AR","bs-BS","bg-BG","hr-HR","cs-CZ","da-DK","nl-NL","en-EN","en-US","fi-FI","fr-FR","de-DE","el-GR","he-IL","hu-HU","is-IS","id-ID","it-IT","ko-KR","lb-LB","lt-LT","zh-CN","fa-IR","pl-PL","pt-PT","pt-BR","ro-RO","ru-RU","sk-SK","es-ES","es-MX","sv-SE","th-TH","tr-TR","tw-TW","uk-UA","vi-VN");
+    $lang_availables = array("ar-AR","bs-BS","bg-BG","hr-HR","cs-CZ","da-DK","nl-NL","en-EN","en-US","fi-FI","fr-FR","de-DE","el-GR","he-IL","hu-HU","is-IS","id-ID","it-IT","ko-KR","lb-LB","lt-LT");
 
     $lang_api = in_array(get_bloginfo("language"), $lang_availables) ? get_bloginfo("language") : 'en-EN';
     
@@ -119,13 +119,22 @@ function tr_grabber_install() {
     
 }
 
-register_activation_hook(__FILE__, 'tr_grabber_install');
+register_activation_hook(__FILE__, function() {
+	tr_grabber_install();
+	require_once( dirname( __FILE__ ) . '/inc/class-trg-db.php' );
+	TRG_DB::install();
+});
 
 $config_grabber = get_option('tr_grabber') == '' ? '' : unserialize ( get_option('tr_grabber') );
 
 define( 'TR_GRABBER_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'TR_GRABBER_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 
+// Load DB class and run version check on plugins_loaded
+require_once(TR_GRABBER_PLUGIN_DIR.'inc/class-trg-db.php');
+add_action( 'plugins_loaded', function() {
+	TRG_DB::install();
+});
 
 require_once(TR_GRABBER_PLUGIN_DIR.'inc/constants.php'); // constants
 require_once(TR_GRABBER_PLUGIN_DIR.'inc/post-type.php'); // post type
